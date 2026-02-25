@@ -18,6 +18,7 @@ TRACKING_FILE = 'tracking_history.csv'
 
 # ================= โซนฟังก์ชันคำนวณ =================
 
+# 1. ฟังก์ชันคำนวณระยะทาง
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -27,22 +28,20 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c * 1.4
 
+# 2. [อัปเดต!] ฟังก์ชันคำนวณต้นทุน (ปรับเป็น "ต้นทุนภายในบริษัท" เพื่อให้สมจริง)
 def calculate_market_price(distance_km, car_type):
     price = 0
     if "4" in car_type:
-        base_price = 450
-        if distance_km <= 40:
-            price = base_price + (distance_km * 14)
-        else:
-            price = base_price + (40 * 14) + ((distance_km - 40) * 10)
+        # รถกระบะ 4 ล้อ: ค่าแรง/ค่าเสื่อมเริ่มต้น 300 บาท + ค่าน้ำมัน/สึกหรอ 5 บาทต่อกิโลเมตร
+        base_price = 300
+        price = base_price + (distance_km * 5)
     else:
-        base_price = 1800
-        if distance_km <= 80:
-            price = base_price + (distance_km * 28)
-        else:
-            price = base_price + (80 * 28) + ((distance_km - 80) * 22)
+        # รถ 6 ล้อ: ค่าแรง/ค่าเสื่อมเริ่มต้น 500 บาท + ค่าน้ำมัน/สึกหรอ 8 บาทต่อกิโลเมตร
+        base_price = 500
+        price = base_price + (distance_km * 8)
     return price
 
+# 3. ฟังก์ชัน VRP (จัดเส้นทาง)
 def solve_vrp_from_df(depot_name, df_data):
     locations = {}
     for index, row in df_data.iterrows():
@@ -77,6 +76,7 @@ def solve_vrp_from_df(depot_name, df_data):
     route.append(depot_name)
     return route, total_dist, locations
 
+# 4. ฟังก์ชัน Geocoding
 def get_lat_lon(location_name):
     geolocator = Nominatim(user_agent="logistics_student_project_66")
     try:
@@ -87,6 +87,7 @@ def get_lat_lon(location_name):
     except:
         return None, None
 
+# 5. ฟังก์ชัน OSRM
 def get_osrm_route(coord1, coord2):
     url = f"http://router.project-osrm.org/route/v1/driving/{coord1[1]},{coord1[0]};{coord2[1]},{coord2[0]}?overview=full&geometries=geojson"
     try:
@@ -133,7 +134,7 @@ def save_history(route_str, km, old_cost, new_cost):
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
-# 7. [อัปเกรด!] ฟังก์ชันบันทึก Tracking สถานะคนขับ (เชื่อมเข้า Google Sheets - ลง Tracking)
+# 7. ฟังก์ชันบันทึก Tracking สถานะคนขับ (เชื่อมเข้า Google Sheets - ลง Tracking)
 def save_tracking_status(job_id, status):
     APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
     
