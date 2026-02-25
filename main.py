@@ -25,7 +25,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c * 1.4
 
-# 2. ฟังก์ชันคำนวณราคา
+# 2. ฟังก์ชันคำนวณราคา (เฉพาะระยะทาง)
 def calculate_market_price(distance_km, car_type):
     price = 0
     if "4" in car_type:
@@ -101,10 +101,8 @@ def get_osrm_route(coord1, coord2):
 
 # 6. ฟังก์ชันบันทึกประวัติ (เชื่อมต่อ Google Sheets)
 def save_history(route_str, km, old_cost, new_cost):
-    # ✅ ลิงก์ถูกต้องแล้วครับ
     APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
 
-    # เตรียมข้อมูลสำหรับส่ง
     data = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "route": route_str,
@@ -114,7 +112,6 @@ def save_history(route_str, km, old_cost, new_cost):
         "saving": old_cost - new_cost
     }
 
-    # 1. พยายามส่งไป Google Sheets
     try:
         if "script.google.com" in APP_SCRIPT_URL:
             response = requests.post(APP_SCRIPT_URL, json=data)
@@ -125,7 +122,6 @@ def save_history(route_str, km, old_cost, new_cost):
     except Exception as e:
         st.error(f"❌ เชื่อมต่อ Google ไม่ได้: {e}")
 
-    # 2. บันทึกลงไฟล์ CSV ในเครื่อง (สำรอง)
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
     else:
@@ -153,15 +149,13 @@ def create_gmaps_link(route_list, loc_dict):
         waypoint_strs.append(f"{coords[0]},{coords[1]}")
     
     waypoints_param = "|".join(waypoint_strs)
-    
-    # 🔴 [แก้แล้ว] เปลี่ยนเป็นลิงก์ที่ถูกต้องของ Google Maps
     base_url = "https://www.google.com/maps/dir/?api=1"
     full_url = f"{base_url}&origin={origin_str}&destination={dest_str}&waypoints={waypoints_param}&travelmode=driving"
     return full_url
 
 # ================= หน้าจอแอป (UI) =================
 st.title("🚚 Smart Logistics Platform")
-st.caption("ระบบบริหารจัดการขนส่งครบวงจร (VRP + Hybrid Search)")
+st.caption("ระบบบริหารจัดการขนส่งครบวงจร (VRP + Hybrid Search + Traffic Cost)")
 
 tab_file, tab_search, tab_history = st.tabs(["📂 จัดเส้นทางจากไฟล์", "🔍 ค้นหา/ระบุพิกัด", "📊 ประวัติ & ดาวน์โหลด"])
 
@@ -186,21 +180,43 @@ with tab_file:
                 location_list = df['Location'].tolist()
                 depot = st.selectbox("จุดเริ่มต้น", location_list)
                 car_type = st.radio("ประเภทรถ", ["รถกระบะ 4 ล้อ", "6 ล้อ"], key="car1")
-                old_cost = st.number_input("ต้นทุนเดิม (บาท)", value=2000.0, key="old1")
+                
+                # [ใหม่] เพิ่มตัวเลือกสภาพจราจร
+                traffic_1 = st.selectbox("สภาพการจราจร / สภาพอากาศ", ["🟢 ปกติ (ถนนโล่ง)", "🟡 รถติดปานกลาง / ฝนตก", "🔴 รถติดหนัก (ช่วงเร่งด่วน)"], key="traf1")
+                old_cost = st.number_input("ต้นทุนเดิม (บาท)", value=1200.0, key="old1") # ตั้งค่าเริ่มต้น 1200 ตามที่คุณลงพื้นที่
                 
                 if st.button("🚀 คำนวณ (จากไฟล์)", type="primary"):
                     route, km, loc_dict = solve_vrp_from_df(depot, df)
-                    new_cost = calculate_market_price(km, car_type)
-                    saving = old_cost - new_cost
+                    
+                    # 1. คำนวณราคาฐาน (จากระยะทาง)
+                    base_price = calculate_market_price(km, car_type)
+                    
+                    # 2. คำนวณค่าเสียเวลา (Time Surcharge)
+                    # ประเมินเวลาวิ่งแบบถนนโล่ง: ความเร็วเฉลี่ย 40 กม./ชม. (1 กม. = 1.5 นาที) + จอดจุดละ 15 นาที
+                    estimated_base_mins = (km * 1.5) + (len(route) * 15) 
+                    
+                    if "🟡" in traffic_1:
+                        actual_mins = estimated_base_mins * 1.5  # ช้าลง 50%
+                    elif "🔴" in traffic_1:
+                        actual_mins = estimated_base_mins * 2.0  # ช้าลง 100%
+                    else:
+                        actual_mins = estimated_base_mins
+                        
+                    # คิดค่าเสียเวลาส่วนเกิน นาทีละ 2 บาท
+                    extra_time = actual_mins - estimated_base_mins
+                    time_surcharge = extra_time * 2
+                    
+                    # 3. ราคาสุทธิ
+                    final_cost = base_price + time_surcharge
                     
                     # บันทึกข้อมูล
-                    save_history(" -> ".join(route), km, old_cost, new_cost)
-                    
+                    save_history(" -> ".join(route), km, old_cost, final_cost)
                     gmaps_link = create_gmaps_link(route, loc_dict)
                     
                     st.session_state['res_file'] = {
-                        'route': route, 'km': km, 'cost': new_cost, 'locs': loc_dict,
-                        'gmaps': gmaps_link
+                        'route': route, 'km': km, 'cost': final_cost, 'locs': loc_dict,
+                        'gmaps': gmaps_link, 'base_price': base_price, 'surcharge': time_surcharge,
+                        'time': actual_mins
                     }
 
             with c2:
@@ -219,8 +235,14 @@ with tab_file:
                     st_folium(m, width=700, key="map1")
                     
                     st.info(f"📍 ลำดับการส่ง: {' -> '.join(res['route'])}")
-                    st.metric("ระยะทางรวม", f"{res['km']:.2f} กม.")
-                    st.metric("ราคาเหมา", f"{res['cost']:,.2f} บาท")
+                    
+                    # แสดงผลแบบแยกรายละเอียดให้เห็นชัดเจน
+                    col_a, col_b, col_c = st.columns(3)
+                    col_a.metric("ระยะทางรวม", f"{res['km']:.2f} กม.")
+                    col_b.metric("เวลาจัดส่ง (ประเมิน)", f"{res['time']/60:.1f} ชม.")
+                    col_c.metric("ราคาสุทธิ", f"{res['cost']:,.2f} บาท")
+                    
+                    st.caption(f"*(แบ่งเป็น: ราคาตามระยะทาง {res['base_price']:,.0f} บ. + ค่าเสียเวลารถติด {res['surcharge']:,.0f} บ.)*")
                     
         except Exception as e:
             st.error(f"Error: {e}")
@@ -257,6 +279,9 @@ with tab_search:
             end_lon = c_lon2.number_input("Lon ปลายทาง", 100.0000, format="%.4f")
 
         car_type_2 = st.radio("ประเภทรถ", ["รถกระบะ 4 ล้อ", "6 ล้อ"], key="car2")
+        
+        # [ใหม่] เพิ่มตัวเลือกสภาพจราจร
+        traffic_2 = st.selectbox("สภาพการจราจร / สภาพอากาศ", ["🟢 ปกติ (ถนนโล่ง)", "🟡 รถติดปานกลาง / ฝนตก", "🔴 รถติดหนัก (ช่วงเร่งด่วน)"], key="traf2")
         old_cost_2 = st.number_input("ต้นทุนเดิม (บาท)", value=1000.0, key="old2")
 
         if st.button("🚀 คำนวณ (ค้นหา)", type="primary"):
@@ -269,20 +294,32 @@ with tab_search:
                 start_name, end_name = f"GPS:{start_lat},{start_lon}", f"GPS:{end_lat},{end_lon}"
 
             if start_lat and end_lat:
-                geo_path, km, mins = get_osrm_route((start_lat, start_lon), (end_lat, end_lon))
-                new_cost = calculate_market_price(km, car_type_2)
+                geo_path, km, base_mins = get_osrm_route((start_lat, start_lon), (end_lat, end_lon))
+                
+                # คำนวณราคาฐาน
+                base_price = calculate_market_price(km, car_type_2)
+                
+                # คำนวณค่าเสียเวลา (Time Surcharge)
+                if "🟡" in traffic_2:
+                    actual_mins = base_mins * 1.5
+                elif "🔴" in traffic_2:
+                    actual_mins = base_mins * 2.5
+                else:
+                    actual_mins = base_mins
+                    
+                time_surcharge = (actual_mins - base_mins) * 2 # คิดเพิ่มนาทีละ 2 บาท
+                final_cost = base_price + time_surcharge
                 
                 # บันทึกข้อมูล
-                save_history(f"{start_name}->{end_name}", km, old_cost_2, new_cost)
+                save_history(f"{start_name}->{end_name}", km, old_cost_2, final_cost)
                 
-                # 🔴 [แก้แล้ว] เปลี่ยนเป็นลิงก์ที่ถูกต้องของ Google Maps
                 gmaps_link_2 = f"https://www.google.com/maps/dir/?api=1&origin={start_lat},{start_lon}&destination={end_lat},{end_lon}&travelmode=driving"
 
                 st.session_state['res_search'] = {
                     'start': [start_lat, start_lon], 'end': [end_lat, end_lon],
-                    'km': km, 'mins': mins, 'cost': new_cost, 'path': geo_path,
-                    'names': [start_name, end_name],
-                    'gmaps': gmaps_link_2
+                    'km': km, 'mins': actual_mins, 'cost': final_cost, 'path': geo_path,
+                    'names': [start_name, end_name], 'gmaps': gmaps_link_2,
+                    'base_price': base_price, 'surcharge': time_surcharge
                 }
             else:
                 st.error("❌ หาพิกัดไม่เจอ")
@@ -298,7 +335,9 @@ with tab_search:
             folium.Marker(res['start'], popup=res['names'][0], icon=folium.Icon(color='green', icon='play')).add_to(m2)
             folium.Marker(res['end'], popup=res['names'][1], icon=folium.Icon(color='red', icon='stop')).add_to(m2)
             st_folium(m2, width=700, height=500, key="map2")
-            st.success(f"ระยะทาง: {res['km']:.2f} กม. | ราคา: {res['cost']:,.2f} บาท")
+            
+            st.success(f"ระยะทาง: {res['km']:.2f} กม. | เวลาขับรถ: {res['mins']:.0f} นาที | ราคาสุทธิ: {res['cost']:,.2f} บาท")
+            st.caption(f"*(แบ่งเป็น: ราคาตามระยะทาง {res['base_price']:,.0f} บ. + ค่าเสียเวลารถติด {res['surcharge']:,.0f} บ.)*")
 
 # --- TAB 3: ประวัติ ---
 with tab_history:
