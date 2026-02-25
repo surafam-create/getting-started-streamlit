@@ -4,7 +4,7 @@ import math
 import folium
 from streamlit_folium import st_folium
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone # [อัปเดต!] นำเข้าตัวจัดการโซนเวลา
 import requests
 from geopy.geocoders import Nominatim
 import urllib.parse 
@@ -103,8 +103,12 @@ def get_osrm_route(coord1, coord2):
 def save_history(route_str, km, old_cost, new_cost):
     APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
 
+    # --- [อัปเดต!] ตั้งค่าโซนเวลาเป็นประเทศไทย (UTC+7) ---
+    tz_thai = timezone(timedelta(hours=7))
+    current_thai_time = datetime.now(tz_thai).strftime("%Y-%m-%d %H:%M:%S")
+
     data = {
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "date": current_thai_time, # ใช้เวลาไทยในการบันทึก
         "route": route_str,
         "km": km,
         "old_cost": old_cost,
