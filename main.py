@@ -14,11 +14,10 @@ st.set_page_config(page_title="Smart Logistics Pro", layout="wide", page_icon="�
 
 # ตัวแปรเก็บไฟล์ข้อมูล
 DATA_FILE = 'saving_history.csv'
-TRACKING_FILE = 'tracking_history.csv' # [เพิ่มใหม่!] ไฟล์เก็บประวัติการส่งของ
+TRACKING_FILE = 'tracking_history.csv' 
 
 # ================= โซนฟังก์ชันคำนวณ =================
 
-# 1. ฟังก์ชันคำนวณระยะทาง
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -28,7 +27,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c * 1.4
 
-# 2. ฟังก์ชันคำนวณราคา
 def calculate_market_price(distance_km, car_type):
     price = 0
     if "4" in car_type:
@@ -45,7 +43,6 @@ def calculate_market_price(distance_km, car_type):
             price = base_price + (80 * 28) + ((distance_km - 80) * 22)
     return price
 
-# 3. ฟังก์ชัน VRP (จัดเส้นทาง)
 def solve_vrp_from_df(depot_name, df_data):
     locations = {}
     for index, row in df_data.iterrows():
@@ -80,7 +77,6 @@ def solve_vrp_from_df(depot_name, df_data):
     route.append(depot_name)
     return route, total_dist, locations
 
-# 4. ฟังก์ชัน Geocoding
 def get_lat_lon(location_name):
     geolocator = Nominatim(user_agent="logistics_student_project_66")
     try:
@@ -91,7 +87,6 @@ def get_lat_lon(location_name):
     except:
         return None, None
 
-# 5. ฟังก์ชัน OSRM
 def get_osrm_route(coord1, coord2):
     url = f"http://router.project-osrm.org/route/v1/driving/{coord1[1]},{coord1[0]};{coord2[1]},{coord2[0]}?overview=full&geometries=geojson"
     try:
@@ -102,7 +97,7 @@ def get_osrm_route(coord1, coord2):
     except:
         return None, 0, 0
 
-# 6. ฟังก์ชันบันทึกประวัติ (ราคา/ระยะทาง)
+# 6. ฟังก์ชันบันทึกประวัติ (เชื่อมต่อ Google Sheets - ลง Sheet1)
 def save_history(route_str, km, old_cost, new_cost):
     APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
 
@@ -123,8 +118,6 @@ def save_history(route_str, km, old_cost, new_cost):
             response = requests.post(APP_SCRIPT_URL, json=data)
             if response.status_code == 200:
                 st.toast('✅ บันทึกข้อมูลลง Google Sheets แล้ว!', icon='☁️')
-            else:
-                st.toast(f'⚠️ Google แจ้งว่า: {response.text}', icon='⚠️')
     except Exception as e:
         st.error(f"❌ เชื่อมต่อ Google ไม่ได้: {e}")
 
@@ -140,11 +133,25 @@ def save_history(route_str, km, old_cost, new_cost):
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
-# 7. [ใหม่!] ฟังก์ชันบันทึก Tracking สถานะคนขับ
+# 7. [อัปเกรด!] ฟังก์ชันบันทึก Tracking สถานะคนขับ (เชื่อมเข้า Google Sheets - ลง Tracking)
 def save_tracking_status(job_id, status):
+    APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
+    
     tz_thai = timezone(timedelta(hours=7))
     current_thai_time = datetime.now(tz_thai).strftime("%Y-%m-%d %H:%M:%S")
 
+    # 1. ส่งข้อมูลขึ้น Google Sheets
+    data_to_send = {
+        "date": current_thai_time,
+        "job_id": job_id,
+        "status": status
+    }
+    try:
+        requests.post(APP_SCRIPT_URL, json=data_to_send)
+    except:
+        pass # ถ้าเน็ตหลุดข้ามไปก่อน
+
+    # 2. บันทึกลงไฟล์ CSV ในเครื่อง (เพื่อโชว์บนหน้าเว็บทันที)
     new_data = pd.DataFrame({
         "Date_Time": [current_thai_time],
         "Driver_Job": [job_id],
@@ -159,7 +166,6 @@ def save_tracking_status(job_id, status):
     df = pd.concat([df, new_data], ignore_index=True)
     df.to_csv(TRACKING_FILE, index=False, encoding='utf-8-sig')
 
-# --- ฟังก์ชันสร้างลิงก์ Google Maps ---
 def create_gmaps_link(route_list, loc_dict):
     if not route_list: return None
     origin = loc_dict[route_list[0]]
@@ -182,7 +188,6 @@ def create_gmaps_link(route_list, loc_dict):
 st.title("🚚 Smart Logistics Platform")
 st.caption("ระบบบริหารจัดการขนส่งครบวงจร (VRP + Hybrid Search + Traffic Cost + Real-time Tracking)")
 
-# [เพิ่มใหม่!] เพิ่ม Tab สำหรับคนขับ
 tab_file, tab_search, tab_driver, tab_history = st.tabs(["📂 จัดเส้นทางจากไฟล์", "🔍 ค้นหา/ระบุพิกัด", "📱 อัปเดตสถานะ (คนขับ)", "📊 ประวัติ & ดาวน์โหลด"])
 
 # --- TAB 1: จัดเส้นทาง ---
@@ -350,7 +355,7 @@ with tab_search:
             st.success(f"ระยะทาง: {res['km']:.2f} กม. | เวลาขับรถ: {res['mins']:.0f} นาที | ราคาสุทธิ: {res['cost']:,.2f} บาท")
             st.caption(f"*(แบ่งเป็น: ราคาตามระยะทาง {res['base_price']:,.0f} บ. + ค่าเสียเวลารถติด {res['surcharge']:,.0f} บ.)*")
 
-# --- TAB 3: [ใหม่!] อัปเดตสถานะ (คนขับ) ---
+# --- TAB 3: อัปเดตสถานะ (คนขับ) ---
 with tab_driver:
     st.header("📱 อัปเดตสถานะการจัดส่ง (สำหรับพนักงานขับรถ)")
     st.info("💡 ให้คนขับรถเปิดหน้านี้บนมือถือ เพื่อกดรายงานสถานะให้แอดมินทราบแบบ Real-time")
@@ -379,7 +384,6 @@ with tab_driver:
         st.subheader("📋 กระดานติดตามสถานะ (Live Status)")
         if os.path.exists(TRACKING_FILE):
             track_df = pd.read_csv(TRACKING_FILE)
-            # เรียงจากใหม่สุดไปเก่าสุด และโชว์ 10 รายการล่าสุด
             latest_track = track_df.sort_values(by="Date_Time", ascending=False).head(10)
             st.dataframe(latest_track, use_container_width=True, hide_index=True)
             
