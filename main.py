@@ -28,42 +28,24 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c * 1.4
 
-# 2. [อัปเดตขั้นสุด!] ฟังก์ชันคำนวณต้นทุนแบบ Activity-Based Costing (ABC)
+# 2. ฟังก์ชันคำนวณต้นทุนแบบ Activity-Based Costing (ABC)
 def calculate_market_price(distance_km, car_type, fuel_price_today):
     if "4" in car_type:
-        # -------------------------------------
-        # โครงสร้างต้นทุน : รถกระบะ 4 ล้อตู้ทึบ
-        # -------------------------------------
-        # 1. ต้นทุนคงที่ (Fixed Cost) ต่อวัน/รอบ
-        driver_wage = 500          # ค่าจ้างคนขับ
-        vehicle_depreciation = 150 # ค่าเสื่อมราคา + ประกัน + ภาษี (เฉลี่ยต่อวัน)
+        driver_wage = 500          
+        vehicle_depreciation = 150 
         fixed_cost = driver_wage + vehicle_depreciation
-        
-        # 2. ต้นทุนผันแปร (Variable Cost)
-        fuel_efficiency = 12.0     # อัตรากินน้ำมัน 12 กม./ลิตร
-        maintenance_per_km = 1.0   # ค่าบำรุงรักษา/ยาง 1 บาท/กม.
+        fuel_efficiency = 12.0     
+        maintenance_per_km = 1.0   
     else:
-        # -------------------------------------
-        # โครงสร้างต้นทุน : รถบรรทุก 6 ล้อ
-        # -------------------------------------
-        # 1. ต้นทุนคงที่ (Fixed Cost) ต่อวัน/รอบ
-        driver_wage = 600          # ค่าจ้างคนขับ
-        helper_wage = 350          # ค่าจ้างเด็กรถ (ผู้ช่วยยกของ)
-        vehicle_depreciation = 300 # ค่าเสื่อมราคา + ประกัน + ภาษี (เฉลี่ยต่อวัน)
+        driver_wage = 600          
+        helper_wage = 350          
+        vehicle_depreciation = 300 
         fixed_cost = driver_wage + helper_wage + vehicle_depreciation
-        
-        # 2. ต้นทุนผันแปร (Variable Cost)
-        fuel_efficiency = 7.0      # อัตรากินน้ำมัน 7 กม./ลิตร
-        maintenance_per_km = 2.5   # ค่าบำรุงรักษา/ยาง 2.5 บาท/กม.
+        fuel_efficiency = 7.0      
+        maintenance_per_km = 2.5   
 
-    # --- กระบวนการคำนวณ ---
-    # ค่าน้ำมัน = (ระยะทางวิ่งจริง / อัตราสิ้นเปลือง) * ราคาน้ำมันปัจจุบัน
     fuel_cost = (distance_km / fuel_efficiency) * fuel_price_today
-    
-    # ค่าซ่อมบำรุง = ระยะทางวิ่งจริง * อัตราซ่อมบำรุงต่อกิโลเมตร
     maintenance_cost = distance_km * maintenance_per_km
-    
-    # ราคาสุทธิ (Base Cost)
     total_base_cost = fixed_cost + fuel_cost + maintenance_cost
     
     return total_base_cost
@@ -125,7 +107,7 @@ def get_osrm_route(coord1, coord2):
     except:
         return None, 0, 0
 
-# 6. ฟังก์ชันบันทึกประวัติ (เชื่อมต่อ Google Sheets - ลง Sheet1)
+# 6. ฟังก์ชันบันทึกประวัติ (เชื่อมต่อ Google Sheets)
 def save_history(route_str, km, old_cost, new_cost):
     APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
 
@@ -161,14 +143,13 @@ def save_history(route_str, km, old_cost, new_cost):
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
-# 7. ฟังก์ชันบันทึก Tracking สถานะคนขับ (เชื่อมเข้า Google Sheets - ลง Tracking)
+# 7. ฟังก์ชันบันทึก Tracking สถานะคนขับ
 def save_tracking_status(job_id, status):
     APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHuMqah43jZlMFQumEfE7F22t4HCsnEPon8jOV9Y-WFaj9Yx8DhW1uex_DIQAZYowGbA/exec" 
     
     tz_thai = timezone(timedelta(hours=7))
     current_thai_time = datetime.now(tz_thai).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. ส่งข้อมูลขึ้น Google Sheets
     data_to_send = {
         "date": current_thai_time,
         "job_id": job_id,
@@ -177,9 +158,8 @@ def save_tracking_status(job_id, status):
     try:
         requests.post(APP_SCRIPT_URL, json=data_to_send)
     except:
-        pass # ถ้าเน็ตหลุดข้ามไปก่อน
+        pass 
 
-    # 2. บันทึกลงไฟล์ CSV ในเครื่อง (เพื่อโชว์บนหน้าเว็บทันที)
     new_data = pd.DataFrame({
         "Date_Time": [current_thai_time],
         "Driver_Job": [job_id],
@@ -214,14 +194,9 @@ def create_gmaps_link(route_list, loc_dict):
 
 # ================= หน้าจอแอป (UI) =================
 
-# ---------------------------------------------------------
-# [เพิ่มใหม่!] แถบตั้งค่าด้านข้าง (Sidebar) สำหรับแอดมิน
 st.sidebar.header("⚙️ ตั้งค่าระบบ (Daily Settings)")
 st.sidebar.info("อัปเดตตัวแปรให้ตรงกับความเป็นจริง ณ วันที่ปฏิบัติงาน")
-
-# สร้างช่องให้แอดมินพิมพ์ราคาน้ำมันได้เอง (ค่าเริ่มต้น 30.50 บาท)
 current_fuel_price = st.sidebar.number_input("⛽ ราคาน้ำมันดีเซลวันนี้ (บาท/ลิตร)", value=30.50, step=0.10)
-# ---------------------------------------------------------
 
 st.title("🚚 Smart Logistics Platform")
 st.caption("ระบบบริหารจัดการขนส่งครบวงจร (VRP + ABC Costing + Traffic Surcharge + Real-time Tracking)")
@@ -256,10 +231,19 @@ with tab_file:
                 if st.button("🚀 คำนวณ (จากไฟล์)", type="primary"):
                     route, km, loc_dict = solve_vrp_from_df(depot, df)
                     
-                    # [อัปเดต] ส่งราคาน้ำมัน current_fuel_price ไปคำนวณด้วย
                     base_price = calculate_market_price(km, car_type, current_fuel_price)
                     
-                    estimated_base_mins = (km * 1.5) + (len(route) * 15) 
+                    # --------- แก้ไขสูตรคำนวณเวลาใหม่ให้แม่นยำขึ้น ---------
+                    # 1. ประเมินเวลาล้อหมุน: ความเร็วเฉลี่ย 50 กม./ชม. (1 กม. = 1.2 นาที)
+                    driving_mins = km * 1.2
+                    
+                    # 2. ประเมินเวลาจอดลงของ: นับเฉพาะจุดลูกค้า (ตัดต้นทางและปลายทางออก) ให้เวลาจุดละ 15 นาที
+                    num_dropoffs = max(0, len(route) - 2) 
+                    dropoff_mins = num_dropoffs * 15
+                    
+                    # เวลารวมพื้นฐาน = เวลาขับรถ + เวลาลงของ
+                    estimated_base_mins = driving_mins + dropoff_mins
+                    # ----------------------------------------------------
                     
                     if "🟡" in traffic_1:
                         actual_mins = estimated_base_mins * 1.5
@@ -355,7 +339,6 @@ with tab_search:
             if start_lat and end_lat:
                 geo_path, km, base_mins = get_osrm_route((start_lat, start_lon), (end_lat, end_lon))
                 
-                # [อัปเดต] ส่งราคาน้ำมัน current_fuel_price ไปคำนวณด้วย
                 base_price = calculate_market_price(km, car_type_2, current_fuel_price)
                 
                 if "🟡" in traffic_2:
