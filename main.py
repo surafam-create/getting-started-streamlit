@@ -28,25 +28,36 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c * 1.4
 
-# 2. ฟังก์ชันคำนวณต้นทุนแบบ Activity-Based Costing (ABC)
-def calculate_market_price(distance_km, car_type, fuel_price_today):
+# 2. [อัปเดตตามโปรเจค!] ฟังก์ชันคำนวณต้นทุนด้วยแนวคิด Marginal Costing Approach
+def calculate_market_price(distance_km, car_type, fuel_price_today, toll_fee):
+    
+    # ----------------------------------------------------
+    # กำหนดค่าพารามิเตอร์ตามประเภทรถ
+    # ----------------------------------------------------
     if "4" in car_type:
-        driver_wage = 500          
-        vehicle_depreciation = 150 
-        fixed_cost = driver_wage + vehicle_depreciation
-        fuel_efficiency = 12.0     
-        maintenance_per_km = 1.0   
+        fuel_efficiency = 12.0     # อัตรากินน้ำมัน 12 กม./ลิตร
+        daily_driver_expense = 500 # ค่าจ้างคนขับรายวัน (Fixed Cost)
     else:
-        driver_wage = 600          
-        helper_wage = 350          
-        vehicle_depreciation = 300 
-        fixed_cost = driver_wage + helper_wage + vehicle_depreciation
-        fuel_efficiency = 7.0      
-        maintenance_per_km = 2.5   
-
-    fuel_cost = (distance_km / fuel_efficiency) * fuel_price_today
-    maintenance_cost = distance_km * maintenance_per_km
-    total_base_cost = fixed_cost + fuel_cost + maintenance_cost
+        fuel_efficiency = 7.0      # อัตรากินน้ำมัน 7 กม./ลิตร
+        daily_driver_expense = 950 # ค่าจ้างคนขับ 600 + เด็กรถ 350 (Fixed Cost)
+        
+    # ----------------------------------------------------
+    # การคำนวณตาม Variable Cost Based Model
+    # ----------------------------------------------------
+    # 1. ต้นทุนผันแปรต่อกิโลเมตร (Cost per Kilometer) 
+    # ได้มาจาก ราคาน้ำมันวันนี้ หารด้วย อัตราสิ้นเปลือง
+    cost_per_km = fuel_price_today / fuel_efficiency
+    
+    # 2. ต้นทุนผันแปรทางตรงรวม (Total Fuel Cost)
+    total_fuel_cost = cost_per_km * distance_km
+    
+    # 3. ต้นทุนผันแปรตามเส้นทาง (Toll Fee) 
+    # ใช้ค่า toll_fee ที่รับมาจากหน้าเว็บ
+    
+    # ----------------------------------------------------
+    # สมการ: Total Trip Cost = [ (Cost per KM * Distance) + Toll Fee ] + Daily Driver Expense
+    # ----------------------------------------------------
+    total_base_cost = total_fuel_cost + toll_fee + daily_driver_expense
     
     return total_base_cost
 
@@ -196,10 +207,13 @@ def create_gmaps_link(route_list, loc_dict):
 
 st.sidebar.header("⚙️ ตั้งค่าระบบ (Daily Settings)")
 st.sidebar.info("อัปเดตตัวแปรให้ตรงกับความเป็นจริง ณ วันที่ปฏิบัติงาน")
+
+# [เพิ่มใหม่!] เพิ่มช่องให้กรอกค่าทางด่วนใน Sidebar
 current_fuel_price = st.sidebar.number_input("⛽ ราคาน้ำมันดีเซลวันนี้ (บาท/ลิตร)", value=30.50, step=0.10)
+current_toll_fee = st.sidebar.number_input("🛣️ ค่าผ่านทาง / ทางด่วน (บาท)", value=0.0, step=10.0)
 
 st.title("🚚 Smart Logistics Platform")
-st.caption("ระบบบริหารจัดการขนส่งครบวงจร (VRP + ABC Costing + Traffic Surcharge + Real-time Tracking)")
+st.caption("ระบบบริหารจัดการขนส่งครบวงจร (VRP + Marginal Costing + Traffic Surcharge + Real-time Tracking)")
 
 tab_file, tab_search, tab_driver, tab_history = st.tabs(["📂 จัดเส้นทางจากไฟล์", "🔍 ค้นหา/ระบุพิกัด", "📱 อัปเดตสถานะ (คนขับ)", "📊 ประวัติ & ดาวน์โหลด"])
 
@@ -231,19 +245,13 @@ with tab_file:
                 if st.button("🚀 คำนวณ (จากไฟล์)", type="primary"):
                     route, km, loc_dict = solve_vrp_from_df(depot, df)
                     
-                    base_price = calculate_market_price(km, car_type, current_fuel_price)
+                    # [อัปเดต] ส่ง current_toll_fee เข้าไปคำนวณในฟังก์ชันด้วย
+                    base_price = calculate_market_price(km, car_type, current_fuel_price, current_toll_fee)
                     
-                    # --------- แก้ไขสูตรคำนวณเวลาใหม่ให้แม่นยำขึ้น ---------
-                    # 1. ประเมินเวลาล้อหมุน: ความเร็วเฉลี่ย 50 กม./ชม. (1 กม. = 1.2 นาที)
                     driving_mins = km * 1.2
-                    
-                    # 2. ประเมินเวลาจอดลงของ: นับเฉพาะจุดลูกค้า (ตัดต้นทางและปลายทางออก) ให้เวลาจุดละ 15 นาที
                     num_dropoffs = max(0, len(route) - 2) 
                     dropoff_mins = num_dropoffs * 15
-                    
-                    # เวลารวมพื้นฐาน = เวลาขับรถ + เวลาลงของ
                     estimated_base_mins = driving_mins + dropoff_mins
-                    # ----------------------------------------------------
                     
                     if "🟡" in traffic_1:
                         actual_mins = estimated_base_mins * 1.5
@@ -285,9 +293,11 @@ with tab_file:
                     col_a, col_b, col_c = st.columns(3)
                     col_a.metric("ระยะทางรวม", f"{res['km']:.2f} กม.")
                     col_b.metric("เวลาจัดส่ง (ประเมิน)", f"{res['time']/60:.1f} ชม.")
-                    col_c.metric("ราคาสุทธิ (ABC Costing)", f"{res['cost']:,.2f} บาท")
                     
-                    st.caption(f"*(แบ่งเป็น: ต้นทุน Fixed+Variable {res['base_price']:,.0f} บ. + ค่าเสียเวลารถติด {res['surcharge']:,.0f} บ.)*")
+                    # [เปลี่ยนชื่อให้ตรงกับวิชาการ]
+                    col_c.metric("ราคาสุทธิ (Marginal Costing)", f"{res['cost']:,.2f} บาท")
+                    
+                    st.caption(f"*(แบ่งเป็น: Cost from Route {res['base_price']:,.0f} บ. + Traffic Surcharge {res['surcharge']:,.0f} บ.)*")
                     
         except Exception as e:
             st.error(f"Error: {e}")
@@ -339,7 +349,8 @@ with tab_search:
             if start_lat and end_lat:
                 geo_path, km, base_mins = get_osrm_route((start_lat, start_lon), (end_lat, end_lon))
                 
-                base_price = calculate_market_price(km, car_type_2, current_fuel_price)
+                # [อัปเดต] ส่ง current_toll_fee เข้าไปคำนวณในฟังก์ชันด้วย
+                base_price = calculate_market_price(km, car_type_2, current_fuel_price, current_toll_fee)
                 
                 if "🟡" in traffic_2:
                     actual_mins = base_mins * 1.5
@@ -377,7 +388,7 @@ with tab_search:
             st_folium(m2, width=700, height=500, key="map2")
             
             st.success(f"ระยะทาง: {res['km']:.2f} กม. | เวลาขับรถ: {res['mins']:.0f} นาที | ราคาสุทธิ: {res['cost']:,.2f} บาท")
-            st.caption(f"*(แบ่งเป็น: ต้นทุน Fixed+Variable {res['base_price']:,.0f} บ. + ค่าเสียเวลารถติด {res['surcharge']:,.0f} บ.)*")
+            st.caption(f"*(แบ่งเป็น: Cost from Route {res['base_price']:,.0f} บ. + Traffic Surcharge {res['surcharge']:,.0f} บ.)*")
 
 # --- TAB 3: อัปเดตสถานะ (คนขับ) ---
 with tab_driver:
